@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: friendly_ai_postgres
+    environment:
+      POSTGRES_DB: friendly_ai
+      POSTGRES_USER: friendly_ai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U friendly_ai -d friendly_ai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:5000"
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrate-env
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["sh", "-c"]
+    command: "npx prisma generate && npx prisma db push && npx prisma db seed"
+    profiles:
+      - migrate
+
+volumes:
+  pgdata:

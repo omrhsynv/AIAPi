@@ -1,0 +1,172 @@
+// Prisma schema for FriendlyAI
+// PostgreSQL + BetterAuth + Multi-Assistant System
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// BetterAuth Models
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  role          String    @default("user") // "admin" | "user"
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  sessions      Session[]
+  accounts      Account[]
+  chats         Chat[]
+  accessGrants  UserAssistantAccess[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// ============================================
+// Assistant System
+// ============================================
+
+// AI Assistant - Multiple assistants can be created by admin
+model Assistant {
+  id                String   @id @default(cuid())
+  name              String
+  description       String?
+  systemInstruction String   @db.Text
+  vectorStoreId     String?
+  vectorStoreName   String?
+  model             String   @default("gpt-4.1-mini")
+  isPublic          Boolean  @default(false) // If true, all users can access
+  isActive          Boolean  @default(true)
+  color             String   @default("#3B82F6") // Blue default
+  icon              String   @default("bot") // Icon name
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  chats             Chat[]
+  userAccess        UserAssistantAccess[]
+  vectorStoreFiles  VectorStoreFile[]
+
+  @@index([isActive])
+}
+
+// User-Assistant Access Control
+model UserAssistantAccess {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assistantId String
+  assistant   Assistant @relation(fields: [assistantId], references: [id], onDelete: Cascade)
+  grantedAt   DateTime  @default(now())
+  grantedBy   String?   // Admin user ID who granted access
+
+  @@unique([userId, assistantId])
+  @@index([userId])
+  @@index([assistantId])
+}
+
+// ============================================
+// Chat System
+// ============================================
+
+// Chat Session - Now linked to user and assistant
+model Chat {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assistantId String
+  assistant   Assistant @relation(fields: [assistantId], references: [id], onDelete: Cascade)
+  title       String?
+  messages    Message[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([assistantId])
+  @@index([userId, assistantId])
+}
+
+// Individual messages in a chat
+model Message {
+  id        String   @id @default(cuid())
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  role      String   // "user" | "assistant"
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([chatId])
+}
+
+// Track uploaded files for vector stores
+model VectorStoreFile {
+  id            String    @id @default(cuid())
+  assistantId   String
+  assistant     Assistant @relation(fields: [assistantId], references: [id], onDelete: Cascade)
+  openaiFileId  String    @unique
+  fileName      String
+  fileSize      Int
+  status        String    @default("pending") // pending, completed, failed
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([assistantId])
+}
+
+// ============================================
+// App Settings (Global)
+// ============================================
+
+model AppSettings {
+  id        String   @id @default("default")
+  appName   String   @default("FriendlyAI")
+  theme     String   @default("blue") // blue, green, purple, etc.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

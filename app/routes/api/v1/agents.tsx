@@ -1,10 +1,13 @@
 import {
     extractApiKey,
+    extractClientIp,
+    logApiUsage,
     resolveAgent,
     streamAgentResponse,
     toAgentMessages,
     verifyApiKey,
 } from "~/lib/agent-api.server";
+import type { TokenUsage } from "~/lib/openai.server";
 
 /**
  * POST /api/v1/agents/:agent
@@ -40,22 +43,29 @@ export async function action({
         return jsonError("Missing API key", 401);
     }
 
+    const ip = extractClientIp(request.headers);
+
     // Independent lookups — run them together to save a round-trip. Key errors
     // take precedence over agent errors.
     const [keyResult, agentResult] = await Promise.all([
         verifyApiKey(rawKey),
         resolveAgent(params.agent),
     ]);
+    // Unknown/revoked keys aren't metered (no key to attribute the call to).
     if (!keyResult.ok) {
         return jsonError(keyResult.error, keyResult.status);
     }
+    const apiKeyId = keyResult.apiKeyId;
+
     if (!agentResult.ok) {
+        logApiUsage({ apiKeyId, ip, status: agentResult.status });
         return jsonError(agentResult.error, agentResult.status);
     }
     const agent = agentResult.agent;
 
     // Permission: the key must be linked to this assistant (DB-driven).
     if (!keyResult.allowed.has(agent.assistantId)) {
+        logApiUsage({ apiKeyId, assistantId: agent.assistantId, ip, status: 403 });
         return jsonError("API key is not permitted to access this agent", 403);
     }
 
@@ -63,17 +73,40 @@ export async function action({
     try {
         body = await request.json();
     } catch {
+        logApiUsage({ apiKeyId, assistantId: agent.assistantId, ip, status: 400 });
         return jsonError("Invalid JSON body", 400);
     }
 
     const messages = toAgentMessages(body);
     if (messages.length === 0) {
+        logApiUsage({ apiKeyId, assistantId: agent.assistantId, ip, status: 400 });
         return jsonError("No messages provided", 400);
     }
 
     try {
-        const stream = await streamAgentResponse(agent, messages);
-        return new Response(stream, {
+        // Capture token usage reported when the stream completes, then log the
+        // request (with tokens) once the client has drained the stream.
+        let usage: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+        const stream = await streamAgentResponse(agent, messages, (u) => {
+            usage = u;
+        });
+        const metered = stream.pipeThrough(
+            new TransformStream({
+                transform(chunk, controller) {
+                    controller.enqueue(chunk);
+                },
+                flush() {
+                    logApiUsage({
+                        apiKeyId,
+                        assistantId: agent.assistantId,
+                        ip,
+                        status: 200,
+                        ...usage,
+                    });
+                },
+            }),
+        );
+        return new Response(metered, {
             headers: {
                 "Content-Type": "text/plain; charset=utf-8",
                 "Transfer-Encoding": "chunked",
@@ -83,6 +116,7 @@ export async function action({
             },
         });
     } catch (error) {
+        logApiUsage({ apiKeyId, assistantId: agent.assistantId, ip, status: 500 });
         console.error("Agent API error:", error);
         return jsonError("Internal server error", 500);
     }

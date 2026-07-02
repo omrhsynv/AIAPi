@@ -35,6 +35,11 @@ Listedeki her anahtar için:
 Listede ayrıca her anahtarın **ön eki** (`sk_agent_xxxx…`), **durumu** (Aktif/İptal),
 **son kullanım** ve **oluşturulma** zamanı ile **izinli asistanları** görünür.
 
+> Her satırdaki **Detay** butonu, o anahtarın kullanım grafiklerini (token/erişim
+> ölçümü, IP dağılımı, son istekler) ve yönetim aksiyonlarını (pasifize et,
+> izin düzenle, sil) içeren sayfaya götürür. Bkz.
+> [Kullanım Analitiği](./05-kullanim-analitigi.md).
+
 ## B) Komut satırından (CLI)
 
 ```bash

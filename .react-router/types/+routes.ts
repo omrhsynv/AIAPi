@@ -51,6 +51,11 @@ type Pages = {
   "/admin/api-keys": {
     params: {};
   };
+  "/admin/api-keys/:keyId": {
+    params: {
+      "keyId": string;
+    };
+  };
   "/admin/settings": {
     params: {};
   };
@@ -118,7 +123,7 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/login" | "/register" | "/docs/agent-api" | "/chat" | "/chat/:chatId" | "/admin" | "/admin/dashboard" | "/admin/assistants" | "/admin/assistants/:assistantId" | "/admin/users" | "/admin/api-keys" | "/admin/settings" | "/api/logout" | "/api/chat/:chatId" | "/api/transcribe" | "/api/tts" | "/api/assistants" | "/api/user/chats" | "/api/v1/agents/:agent" | "/api/admin/assistants" | "/api/admin/assistants/:assistantId" | "/api/admin/assistants/:assistantId/files" | "/api/admin/users" | "/api/admin/users/:userId/access" | "/api/admin/api-keys" | "/api/admin/api-keys/:keyId" | "/api/auth/*";
+    page: "/" | "/login" | "/register" | "/docs/agent-api" | "/chat" | "/chat/:chatId" | "/admin" | "/admin/dashboard" | "/admin/assistants" | "/admin/assistants/:assistantId" | "/admin/users" | "/admin/api-keys" | "/admin/api-keys/:keyId" | "/admin/settings" | "/api/logout" | "/api/chat/:chatId" | "/api/transcribe" | "/api/tts" | "/api/assistants" | "/api/user/chats" | "/api/v1/agents/:agent" | "/api/admin/assistants" | "/api/admin/assistants/:assistantId" | "/api/admin/assistants/:assistantId/files" | "/api/admin/users" | "/api/admin/users/:userId/access" | "/api/admin/api-keys" | "/api/admin/api-keys/:keyId" | "/api/auth/*";
   };
   "routes/home.tsx": {
     id: "routes/home";
@@ -149,7 +154,7 @@ type RouteFiles = {
   };
   "routes/admin/layout.tsx": {
     id: "routes/admin/layout";
-    page: "/admin" | "/admin/dashboard" | "/admin/assistants" | "/admin/assistants/:assistantId" | "/admin/users" | "/admin/api-keys" | "/admin/settings";
+    page: "/admin" | "/admin/dashboard" | "/admin/assistants" | "/admin/assistants/:assistantId" | "/admin/users" | "/admin/api-keys" | "/admin/api-keys/:keyId" | "/admin/settings";
   };
   "routes/admin/index.tsx": {
     id: "routes/admin/index";
@@ -174,6 +179,10 @@ type RouteFiles = {
   "routes/admin/api-keys.tsx": {
     id: "routes/admin/api-keys";
     page: "/admin/api-keys";
+  };
+  "routes/admin/api-key-detail.tsx": {
+    id: "routes/admin/api-key-detail";
+    page: "/admin/api-keys/:keyId";
   };
   "routes/admin/settings.tsx": {
     id: "routes/admin/settings";
@@ -257,6 +266,7 @@ type RouteModules = {
   "routes/admin/assistant-detail": typeof import("./app/routes/admin/assistant-detail.tsx");
   "routes/admin/users": typeof import("./app/routes/admin/users.tsx");
   "routes/admin/api-keys": typeof import("./app/routes/admin/api-keys.tsx");
+  "routes/admin/api-key-detail": typeof import("./app/routes/admin/api-key-detail.tsx");
   "routes/admin/settings": typeof import("./app/routes/admin/settings.tsx");
   "routes/api/logout": typeof import("./app/routes/api/logout.tsx");
   "api-chat": typeof import("./app/routes/api/chat.tsx");

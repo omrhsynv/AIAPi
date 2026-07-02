@@ -25,6 +25,7 @@ export default [
         route("admin/assistants/:assistantId", "routes/admin/assistant-detail.tsx"),
         route("admin/users", "routes/admin/users.tsx"),
         route("admin/api-keys", "routes/admin/api-keys.tsx"),
+        route("admin/api-keys/:keyId", "routes/admin/api-key-detail.tsx"),
         route("admin/settings", "routes/admin/settings.tsx"),
     ]),
 

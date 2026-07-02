@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "./db.server";
-import { chatStream } from "./openai.server";
+import { chatStream, type TokenUsage } from "./openai.server";
 
 /**
  * Agent API — server-only logic for external, programmatic access.
@@ -227,21 +227,24 @@ export function toAgentMessages(body: unknown): AgentMessage[] {
 export async function streamAgentResponse(
     agent: ResolvedAgent,
     messages: AgentMessage[],
+    onUsage?: (usage: TokenUsage) => void,
 ): Promise<ReadableStream<Uint8Array>> {
     if (!process.env.OPENAI_API_KEY) {
-        return mockStream(agent, messages);
+        return mockStream(agent, messages, onUsage);
     }
     return chatStream(
         messages,
         agent.systemInstruction,
         agent.vectorStoreId ?? undefined,
         agent.model,
+        onUsage,
     );
 }
 
 function mockStream(
     agent: ResolvedAgent,
     messages: AgentMessage[],
+    onUsage?: (usage: TokenUsage) => void,
 ): ReadableStream<Uint8Array> {
     const last = messages[messages.length - 1]?.content ?? "";
     const reply = `[mock:${agent.model}] received ${messages.length} message(s). echo: ${last}`;
@@ -252,8 +255,50 @@ function mockStream(
             if (i < chunks.length) {
                 controller.enqueue(encoder.encode(chunks[i++]));
             } else {
+                if (onUsage) {
+                    // Rough estimate (~4 chars/token) so dev metrics aren't empty.
+                    const inChars = messages.reduce((n, m) => n + m.content.length, 0);
+                    const inputTokens = Math.ceil(inChars / 4);
+                    const outputTokens = Math.ceil(reply.length / 4);
+                    onUsage({ inputTokens, outputTokens, totalTokens: inputTokens + outputTokens });
+                }
                 controller.close();
             }
         },
     });
+}
+
+/** Extract the client IP from proxy headers (X-Forwarded-For / X-Real-IP). */
+export function extractClientIp(headers: Headers): string | null {
+    const xff = headers.get("x-forwarded-for");
+    if (xff) return xff.split(",")[0].trim() || null;
+    return headers.get("x-real-ip");
+}
+
+/**
+ * Record one Agent API request for usage analytics. Fire-and-forget — never
+ * awaited, so it can't add latency to the response; failures are swallowed.
+ */
+export function logApiUsage(entry: {
+    apiKeyId: string;
+    assistantId?: string | null;
+    ip?: string | null;
+    status: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+}): void {
+    prisma.apiKeyUsage
+        .create({
+            data: {
+                apiKeyId: entry.apiKeyId,
+                assistantId: entry.assistantId ?? null,
+                ip: entry.ip ?? null,
+                status: entry.status,
+                inputTokens: entry.inputTokens ?? 0,
+                outputTokens: entry.outputTokens ?? 0,
+                totalTokens: entry.totalTokens ?? 0,
+            },
+        })
+        .catch(() => {});
 }

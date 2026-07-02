@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useRevalidator } from "react-router";
+import { Link, useRevalidator } from "react-router";
 import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -330,6 +330,9 @@ export default function AdminApiKeys({ loaderData }: ComponentProps) {
                                 </div>
 
                                 <div className="flex shrink-0 items-center gap-2">
+                                    <Button variant="outline" size="sm" asChild>
+                                        <Link to={`/admin/api-keys/${key.id}`}>Detay</Link>
+                                    </Button>
                                     <Button variant="outline" size="sm" onClick={() => openEdit(key)}>
                                         İzinler
                                     </Button>

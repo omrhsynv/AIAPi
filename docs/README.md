@@ -12,6 +12,8 @@ için gerekli her şey. Bu klasör adım adım Türkçe rehberler içerir.
 3. [API Kullanımı](./03-api-kullanimi.md) — endpoint, istek/yanıt formatı,
    durum kodları, streaming, kod örnekleri.
 4. [Postman](./04-postman.md) — hazır koleksiyonu içe aktarıp test etme.
+5. [Kullanım Analitiği](./05-kullanim-analitigi.md) — token/erişim ölçümü,
+   IP takibi, anahtar detay sayfasındaki grafikler, pasifize etme.
 
 ## Bir bakışta
 

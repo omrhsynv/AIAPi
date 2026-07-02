@@ -1,0 +1,259 @@
+import { createHash, randomBytes } from "node:crypto";
+import { prisma } from "./db.server";
+import { chatStream } from "./openai.server";
+
+/**
+ * Agent API — server-only logic for external, programmatic access.
+ *
+ * Auth model: a standalone API key authenticates the caller; the target
+ * assistant is chosen per-request by its id or slug. This is the
+ * latency-sensitive path, so both the key check and the agent lookup are
+ * backed by in-memory TTL caches.
+ *
+ * Hot path (warm caches): 0 DB queries.
+ * Cold path: 1 indexed query each for the key and the agent, run in parallel.
+ *
+ * The OpenAI call is behind `streamAgentResponse`, which falls back to a mock
+ * when no OPENAI_API_KEY is configured so the pipeline stays testable.
+ */
+
+// Reused across every request — allocating a TextEncoder per call is wasteful.
+const encoder = new TextEncoder();
+
+// How long resolved (or rejected) keys/agents stay cached. Short enough that
+// revoking a key or toggling an assistant's `isActive` propagates quickly.
+const CACHE_TTL_MS = Number(process.env.AGENT_CACHE_TTL_MS) || 30_000;
+
+// `lastUsedAt` is best-effort — write it at most this often per key, never on
+// the request's critical path.
+const LAST_USED_THROTTLE_MS = 60_000;
+
+// Everything needed to invoke an assistant.
+export type ResolvedAgent = {
+    assistantId: string;
+    model: string;
+    systemInstruction: string;
+    vectorStoreId: string | null;
+};
+
+export type AgentMessage = {
+    role: "user" | "assistant";
+    content: string;
+};
+
+// Result of checking a key: 401 = unknown key, 403 = revoked.
+// `allowed` is the set of assistant ids this key may invoke (DB-driven).
+export type KeyResult =
+    | { ok: true; apiKeyId: string; allowed: Set<string> }
+    | { ok: false; status: 401 | 403; error: string };
+
+// Result of resolving an agent ref: 404 = not found, 403 = inactive.
+export type AgentResult =
+    | { ok: true; agent: ResolvedAgent }
+    | { ok: false; status: 403 | 404; error: string };
+
+type KeyCacheEntry = { value: KeyResult; expires: number };
+type AgentCacheEntry = { value: AgentResult; expires: number };
+
+// Survive dev hot-reloads (same guard pattern as db.server.ts).
+const globalForCache = globalThis as unknown as {
+    __agentKeyCache__?: Map<string, KeyCacheEntry>;
+    __agentAgentCache__?: Map<string, AgentCacheEntry>;
+    __agentKeyLastUsed__?: Map<string, number>;
+};
+
+const keyCache =
+    globalForCache.__agentKeyCache__ ?? (globalForCache.__agentKeyCache__ = new Map());
+const agentCache =
+    globalForCache.__agentAgentCache__ ?? (globalForCache.__agentAgentCache__ = new Map());
+const lastUsed =
+    globalForCache.__agentKeyLastUsed__ ??
+    (globalForCache.__agentKeyLastUsed__ = new Map());
+
+function hashKey(rawKey: string): string {
+    return createHash("sha256").update(rawKey).digest("hex");
+}
+
+/** Generate a new raw API key (shown once). */
+export function generateRawApiKey(): string {
+    return `sk_agent_${randomBytes(20).toString("hex")}`;
+}
+
+/** Hash a raw key for storage/lookup (sha256 hex). */
+export function hashApiKey(rawKey: string): string {
+    return hashKey(rawKey);
+}
+
+/** Drop a key from the in-memory cache so permission/revoke edits apply now. */
+export function invalidateKeyCache(): void {
+    keyCache.clear();
+}
+
+/** Pull the API key from `Authorization: Bearer <key>` or `x-api-key`. */
+export function extractApiKey(headers: Headers): string | null {
+    const auth = headers.get("authorization");
+    if (auth) {
+        const match = /^Bearer\s+(.+)$/i.exec(auth);
+        if (match) return match[1].trim();
+    }
+    const x = headers.get("x-api-key");
+    return x ? x.trim() : null;
+}
+
+/** Verify an API key. Warm cache = no DB query. */
+export async function verifyApiKey(rawKey: string): Promise<KeyResult> {
+    const keyHash = hashKey(rawKey);
+    const now = Date.now();
+
+    const cached = keyCache.get(keyHash);
+    if (cached && cached.expires > now) {
+        if (cached.value.ok) touchLastUsed(cached.value.apiKeyId, keyHash, now);
+        return cached.value;
+    }
+
+    const row = await prisma.apiKey.findUnique({
+        where: { keyHash },
+        select: { id: true, revoked: true, assistants: { select: { id: true } } },
+    });
+
+    let value: KeyResult;
+    if (!row) {
+        value = { ok: false, status: 401, error: "Invalid API key" };
+    } else if (row.revoked) {
+        value = { ok: false, status: 403, error: "API key revoked" };
+    } else {
+        value = {
+            ok: true,
+            apiKeyId: row.id,
+            allowed: new Set(row.assistants.map((a) => a.id)),
+        };
+    }
+
+    keyCache.set(keyHash, { value, expires: now + CACHE_TTL_MS });
+    if (value.ok) touchLastUsed(value.apiKeyId, keyHash, now);
+    return value;
+}
+
+/** Resolve an agent by id or slug. Warm cache = no DB query. */
+export async function resolveAgent(agentRef: string): Promise<AgentResult> {
+    const now = Date.now();
+
+    const cached = agentCache.get(agentRef);
+    if (cached && cached.expires > now) return cached.value;
+
+    const row = await prisma.assistant.findFirst({
+        where: { OR: [{ id: agentRef }, { slug: agentRef }] },
+        select: {
+            id: true,
+            model: true,
+            systemInstruction: true,
+            vectorStoreId: true,
+            isActive: true,
+        },
+    });
+
+    let value: AgentResult;
+    if (!row) {
+        value = { ok: false, status: 404, error: "Agent not found" };
+    } else if (!row.isActive) {
+        value = { ok: false, status: 403, error: "Agent is inactive" };
+    } else {
+        value = {
+            ok: true,
+            agent: {
+                assistantId: row.id,
+                model: row.model,
+                systemInstruction: row.systemInstruction,
+                vectorStoreId: row.vectorStoreId,
+            },
+        };
+    }
+
+    agentCache.set(agentRef, { value, expires: now + CACHE_TTL_MS });
+    return value;
+}
+
+// Fire-and-forget, throttled write. Never awaited, so it can't add latency;
+// failures are swallowed (best-effort bookkeeping).
+function touchLastUsed(apiKeyId: string, keyHash: string, now: number): void {
+    const prev = lastUsed.get(keyHash) ?? 0;
+    if (now - prev < LAST_USED_THROTTLE_MS) return;
+    lastUsed.set(keyHash, now);
+    prisma.apiKey
+        .update({ where: { id: apiKeyId }, data: { lastUsedAt: new Date() } })
+        .catch(() => {
+            lastUsed.delete(keyHash); // roll back throttle so we retry next time
+        });
+}
+
+/**
+ * Normalize a request body into the message list for the LLM.
+ * Accepts either `{ messages: [{ role, content }] }` (preferred, stateless)
+ * or `{ message: "..." }` (convenience). Invalid entries are dropped; the
+ * context is capped to the last 50 messages, matching the chat UI.
+ */
+export function toAgentMessages(body: unknown): AgentMessage[] {
+    if (!body || typeof body !== "object") return [];
+    const b = body as { messages?: unknown; message?: unknown };
+
+    if (Array.isArray(b.messages)) {
+        const out: AgentMessage[] = [];
+        for (const m of b.messages) {
+            if (
+                m &&
+                typeof m === "object" &&
+                ((m as any).role === "user" || (m as any).role === "assistant") &&
+                typeof (m as any).content === "string" &&
+                (m as any).content.length > 0
+            ) {
+                out.push({ role: (m as any).role, content: (m as any).content });
+            }
+        }
+        return out.length > 50 ? out.slice(-50) : out;
+    }
+
+    if (typeof b.message === "string" && b.message.length > 0) {
+        return [{ role: "user", content: b.message }];
+    }
+
+    return [];
+}
+
+/**
+ * The OpenAI seam. Uses the shared `chatStream` helper (reusing the
+ * `getOpenAI()` singleton) when an API key is configured; otherwise falls back
+ * to a mock stream so the pipeline stays testable without an OPENAI_API_KEY.
+ */
+export async function streamAgentResponse(
+    agent: ResolvedAgent,
+    messages: AgentMessage[],
+): Promise<ReadableStream<Uint8Array>> {
+    if (!process.env.OPENAI_API_KEY) {
+        return mockStream(agent, messages);
+    }
+    return chatStream(
+        messages,
+        agent.systemInstruction,
+        agent.vectorStoreId ?? undefined,
+        agent.model,
+    );
+}
+
+function mockStream(
+    agent: ResolvedAgent,
+    messages: AgentMessage[],
+): ReadableStream<Uint8Array> {
+    const last = messages[messages.length - 1]?.content ?? "";
+    const reply = `[mock:${agent.model}] received ${messages.length} message(s). echo: ${last}`;
+    const chunks = reply.match(/[\s\S]{1,24}/g) ?? [reply];
+    let i = 0;
+    return new ReadableStream({
+        pull(controller) {
+            if (i < chunks.length) {
+                controller.enqueue(encoder.encode(chunks[i++]));
+            } else {
+                controller.close();
+            }
+        },
+    });
+}

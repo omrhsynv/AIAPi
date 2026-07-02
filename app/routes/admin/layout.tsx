@@ -12,6 +12,7 @@ import {
     ExternalLink,
     Moon,
     Sun,
+    KeyRound,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
@@ -69,6 +70,7 @@ const navItems = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/admin/dashboard" },
     { icon: Bot, label: "Asistanlar", href: "/admin/assistants" },
     { icon: Users, label: "Kullanıcılar", href: "/admin/users" },
+    { icon: KeyRound, label: "API Anahtarları", href: "/admin/api-keys" },
     { icon: Settings, label: "Ayarlar", href: "/admin/settings" },
 ];
 

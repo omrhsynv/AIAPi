@@ -32,6 +32,9 @@ import {
     Search,
     UserPlus,
     Check,
+    Terminal,
+    Copy,
+    ExternalLink,
 } from "lucide-react";
 import { prisma } from "~/lib/db.server";
 import { toast } from "sonner";
@@ -40,6 +43,7 @@ import { cn } from "~/lib/utils";
 interface AssistantData {
     id: string;
     name: string;
+    slug: string | null;
     description: string | null;
     systemInstruction: string;
     vectorStoreId: string | null;
@@ -83,6 +87,7 @@ interface UserData {
 interface LoaderData {
     assistant: AssistantData | null;
     allUsers: UserData[];
+    appUrl: string;
 }
 
 export async function loader({ params }: { params: { assistantId: string } }): Promise<Response | LoaderData> {
@@ -122,7 +127,7 @@ export async function loader({ params }: { params: { assistantId: string } }): P
         orderBy: { name: "asc" },
     });
 
-    return { assistant, allUsers };
+    return { assistant, allUsers, appUrl: process.env.APP_URL || "" };
 }
 
 interface ComponentProps {
@@ -130,13 +135,14 @@ interface ComponentProps {
 }
 
 export default function AssistantDetail({ loaderData }: ComponentProps) {
-    const { assistant, allUsers } = loaderData;
+    const { assistant, allUsers, appUrl } = loaderData;
     const navigate = useNavigate();
     const revalidator = useRevalidator();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Form state
     const [name, setName] = useState(assistant?.name || "");
+    const [slug, setSlug] = useState(assistant?.slug || "");
     const [description, setDescription] = useState(assistant?.description || "");
     const [systemInstruction, setSystemInstruction] = useState(assistant?.systemInstruction || "");
     const [model, setModel] = useState(assistant?.model || "gpt-4.1-mini");
@@ -167,6 +173,7 @@ export default function AssistantDetail({ loaderData }: ComponentProps) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     name,
+                    slug,
                     description,
                     systemInstruction,
                     model,
@@ -180,7 +187,8 @@ export default function AssistantDetail({ loaderData }: ComponentProps) {
                 toast.success("Asistan güncellendi");
                 revalidator.revalidate();
             } else {
-                toast.error("Güncelleme başarısız");
+                const data = await response.json().catch(() => null);
+                toast.error(data?.error || "Güncelleme başarısız");
             }
         } catch (error) {
             toast.error("Bir hata oluştu");
@@ -339,6 +347,23 @@ export default function AssistantDetail({ loaderData }: ComponentProps) {
         "#EF4444", "#EC4899", "#06B6D4", "#6366F1"
     ];
 
+    // Agent API access — the key authenticates the caller; this agent is
+    // addressed by its slug (or id). Prefer APP_URL, fall back to browser origin.
+    const apiOrigin = appUrl || (typeof window !== "undefined" ? window.location.origin : "");
+    const agentRef = assistant.slug || assistant.id;
+    const apiEndpoint = `${apiOrigin}/api/v1/agents/${agentRef}`;
+    const curlExample = `curl -N ${apiEndpoint} \\
+  -H "Authorization: Bearer <API_KEY>" \\
+  -H "Content-Type: application/json" \\
+  -d '{"message":"Merhaba"}'`;
+
+    const copyToClipboard = (text: string, label: string) => {
+        navigator.clipboard.writeText(text).then(
+            () => toast.success(`${label} kopyalandı`),
+            () => toast.error("Kopyalanamadı"),
+        );
+    };
+
     return (
         <div className="space-y-8">
             {/* Header */}
@@ -439,6 +464,18 @@ export default function AssistantDetail({ loaderData }: ComponentProps) {
                                     <option value="gpt-4o-mini">GPT-4o Mini</option>
                                 </select>
                             </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Slug (API için)</Label>
+                            <Input
+                                value={slug}
+                                onChange={(e) => setSlug(e.target.value)}
+                                placeholder="orn: ustun-zeka (boş bırakılırsa id kullanılır)"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                API çağrılarında asistan kimliği olarak kullanılır. Küçük harf, rakam ve tire.
+                            </p>
                         </div>
 
                         <div className="space-y-2">
@@ -631,6 +668,80 @@ export default function AssistantDetail({ loaderData }: ComponentProps) {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Agent API Access */}
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <CardTitle className="flex items-center gap-2">
+                                <Terminal className="w-5 h-5" />
+                                API Erişimi
+                            </CardTitle>
+                            <CardDescription className="mt-1">
+                                Bu asistanı bir API anahtarı ile dışarıdan çağırın. Tam dokümantasyon için sağdaki butona tıklayın.
+                            </CardDescription>
+                        </div>
+                        <Button variant="outline" size="sm" asChild className="gap-2">
+                            <Link to="/docs/agent-api" target="_blank" rel="noreferrer">
+                                <ExternalLink className="w-4 h-4" />
+                                Dokümantasyon
+                            </Link>
+                        </Button>
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {/* Endpoint */}
+                    <div className="space-y-2">
+                        <Label>Endpoint</Label>
+                        <div className="flex items-center gap-2">
+                            <code className="flex-1 min-w-0 truncate rounded-md border bg-muted/50 px-3 py-2 text-sm">
+                                <span className="font-semibold text-[#21c6cc]">POST</span> {apiEndpoint}
+                            </code>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => copyToClipboard(apiEndpoint, "Endpoint")}
+                                title="Kopyala"
+                            >
+                                <Copy className="w-4 h-4" />
+                            </Button>
+                        </div>
+                    </div>
+
+                    {/* Auth note */}
+                    <div className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+                        Kimlik doğrulama:{" "}
+                        <code className="text-xs bg-background px-1 py-0.5 rounded">
+                            Authorization: Bearer &lt;API_KEY&gt;
+                        </code>
+. Anahtarları{" "}
+                        <Link to="/admin/api-keys" className="text-[#21c6cc] hover:underline">
+                            API Anahtarları
+                        </Link>{" "}
+                        sayfasından oluşturup bu asistana izin verin.
+                    </div>
+
+                    {/* curl example */}
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                            <Label>Örnek İstek</Label>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => copyToClipboard(curlExample, "Komut")}
+                                className="gap-2 h-7"
+                            >
+                                <Copy className="w-3.5 h-3.5" />
+                                Kopyala
+                            </Button>
+                        </div>
+                        <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 text-xs leading-relaxed">
+                            <code>{curlExample}</code>
+                        </pre>
+                    </div>
+                </CardContent>
+            </Card>
 
             {/* User Access Management - Only show for private assistants */}
             {!isPublic && (

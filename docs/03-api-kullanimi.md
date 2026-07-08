@@ -1,5 +1,9 @@
 # 3) API Kullanımı
 
+Bu sayfa yerel (düz metin akışı) endpoint'ini anlatır. **OpenAI uyumlu**
+(`/api/agora/...`) endpoint'ler için bkz.
+[AGORA — OpenAI Uyumlu](./06-agora-openai-uyumlu.md).
+
 ## Endpoint
 
 ```

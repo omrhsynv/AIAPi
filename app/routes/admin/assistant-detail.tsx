@@ -37,6 +37,7 @@ import {
     ExternalLink,
 } from "lucide-react";
 import { prisma } from "~/lib/db.server";
+import { copyText } from "~/lib/clipboard";
 import { toast } from "sonner";
 import { cn } from "~/lib/utils";
 
@@ -357,10 +358,17 @@ export default function AssistantDetail({ loaderData }: ComponentProps) {
   -H "Content-Type: application/json" \\
   -d '{"message":"Merhaba"}'`;
 
+    // AGORA — OpenAI-compatible surface. The agent is chosen via the body's
+    // `model` field, so a standard OpenAI client works by changing the base URL.
+    const agoraEndpoint = `${apiOrigin}/api/agora/chat/completions`;
+    const agoraCurl = `curl -N ${agoraEndpoint} \\
+  -H "Authorization: Bearer <API_KEY>" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"${agentRef}","messages":[{"role":"user","content":"Merhaba"}],"stream":true}'`;
+
     const copyToClipboard = (text: string, label: string) => {
-        navigator.clipboard.writeText(text).then(
-            () => toast.success(`${label} kopyalandı`),
-            () => toast.error("Kopyalanamadı"),
+        copyText(text).then((ok) =>
+            ok ? toast.success(`${label} kopyalandı`) : toast.error("Kopyalanamadı"),
         );
     };
 
@@ -738,6 +746,52 @@ export default function AssistantDetail({ loaderData }: ComponentProps) {
                         </div>
                         <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 text-xs leading-relaxed">
                             <code>{curlExample}</code>
+                        </pre>
+                    </div>
+
+                    {/* AGORA — OpenAI-compatible */}
+                    <div className="space-y-3 rounded-lg border border-[#8d36ff]/30 bg-[#8d36ff]/5 p-4">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-semibold">
+                                    OpenAI-uyumlu (AGORA)
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    Mevcut OpenAI istemcilerini bu adrese yönlendirin; asistanı{" "}
+                                    <code className="rounded bg-background px-1">model</code>{" "}
+                                    alanıyla seçin (
+                                    <code className="rounded bg-background px-1">{agentRef}</code>).
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <code className="flex-1 min-w-0 truncate rounded-md border bg-muted/50 px-3 py-2 text-sm">
+                                <span className="font-semibold text-[#8d36ff]">POST</span>{" "}
+                                {agoraEndpoint}
+                            </code>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => copyToClipboard(agoraEndpoint, "Endpoint")}
+                                title="Kopyala"
+                            >
+                                <Copy className="w-4 h-4" />
+                            </Button>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <Label className="text-xs">Örnek (stream)</Label>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => copyToClipboard(agoraCurl, "Komut")}
+                                className="gap-2 h-7"
+                            >
+                                <Copy className="w-3.5 h-3.5" />
+                                Kopyala
+                            </Button>
+                        </div>
+                        <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 text-xs leading-relaxed">
+                            <code>{agoraCurl}</code>
                         </pre>
                     </div>
                 </CardContent>

@@ -31,8 +31,11 @@ Bu yol **gecikmeye duyarlıdır**. Bu yüzden:
 
 | Dosya | Görevi |
 |-------|--------|
-| `app/lib/agent-api.server.ts` | Çekirdek mantık: anahtar doğrulama, asistan çözümü, cache, izin verisi, OpenAI'ye akış. |
-| `app/routes/api/v1/agents.tsx` | `POST /api/v1/agents/:agent` endpoint'i (resource route). |
+| `app/lib/agent-api.server.ts` | Çekirdek mantık: anahtar doğrulama, asistan çözümü, cache, izin verisi, OpenAI'ye akış + AGORA yardımcıları (OpenAI biçimi). |
+| `app/routes/api/v1/agents.tsx` | `POST /api/v1/agents/:agent` endpoint'i (düz metin akışı). |
+| `app/routes/api/agora/chat-completions.tsx` | `POST /api/agora/chat/completions` — OpenAI uyumlu (JSON veya SSE). |
+| `app/routes/api/agora/stream.tsx` | `POST /api/agora/stream` — her zaman OpenAI SSE akışı. |
+| `app/lib/clipboard.ts` | Güvenli olmayan (HTTP) bağlamlarda da çalışan panoya kopyalama yardımcısı. |
 | `app/routes/admin/api-keys.tsx` | Yönetim paneli: anahtar listesi/oluşturma/izinler. |
 | `app/routes/api/admin/api-keys.tsx` | Anahtar oluşturma API'si (POST). |
 | `app/routes/api/admin/api-key-detail.tsx` | Anahtar güncelle/sil API'si (PATCH/DELETE). |

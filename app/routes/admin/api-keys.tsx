@@ -25,6 +25,7 @@ import {
     ShieldCheck,
 } from "lucide-react";
 import { prisma } from "~/lib/db.server";
+import { copyText } from "~/lib/clipboard";
 import { toast } from "sonner";
 
 interface AssistantOption {
@@ -103,9 +104,8 @@ export default function AdminApiKeys({ loaderData }: ComponentProps) {
         setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
     const copy = (text: string) =>
-        navigator.clipboard.writeText(text).then(
-            () => toast.success("Kopyalandı"),
-            () => toast.error("Kopyalanamadı"),
+        copyText(text).then((ok) =>
+            ok ? toast.success("Kopyalandı") : toast.error("Kopyalanamadı"),
         );
 
     const handleCreate = async () => {

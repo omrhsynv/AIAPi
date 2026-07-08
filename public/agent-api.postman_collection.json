@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "ArisAI — Agent API",
-    "description": "External Agent API for ArisAI. A standalone API key authenticates the caller; the target assistant is chosen per-request by its id or slug (the `agent` variable).\n\nSetup:\n1. Set the `apiKey` collection variable (mint one with `npx tsx scripts/create-agent-key.ts`).\n2. Set `agent` to an assistant id or slug.\n3. `baseUrl` defaults to http://localhost:5173.\n\nResponses stream as `text/plain`; Postman shows the full body once the stream ends.",
+    "description": "External Agent API for ArisAI. A standalone API key authenticates the caller; the target assistant is chosen by id or slug (the `agent` variable).\n\nTwo surfaces:\n- v1 (`/api/v1/agents/{{agent}}`): plain text streaming.\n- AGORA (`/api/agora/*`): OpenAI-compatible; the agent is set via the body's `model` field. `/chat/completions` returns JSON (or SSE with `stream:true`); `/stream` is always SSE.\n\nSetup:\n1. Set the `apiKey` collection variable (mint one with `npx tsx scripts/create-agent-key.ts`).\n2. Set `agent` to an assistant id or slug.\n3. `baseUrl` defaults to http://localhost:5173.\n\nStreaming responses appear in Postman once the stream ends.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -124,6 +124,94 @@
           "script": {
             "type": "text/javascript",
             "exec": ["pm.test('404 Not Found', () => pm.response.to.have.status(404));"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "AGORA — chat/completions (JSON)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"{{agent}}\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Merhaba, tek cümleyle kendini tanit.\" }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/agora/chat/completions",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "agora", "chat", "completions"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const j = pm.response.json();",
+              "pm.test('chat.completion nesnesi', () => pm.expect(j.object).to.eql('chat.completion'));",
+              "pm.test('mesaj icerigi var', () => pm.expect(j.choices[0].message.content.length).to.be.above(0));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "AGORA — chat/completions (stream)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"{{agent}}\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Merhaba\" }\n  ],\n  \"stream\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/agora/chat/completions",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "agora", "chat", "completions"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('SSE data: satiri var', () => pm.expect(pm.response.text()).to.include('data:'));",
+              "pm.test('[DONE] ile biter', () => pm.expect(pm.response.text()).to.include('[DONE]'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "AGORA — stream (Agora.io sade SSE)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"{{agent}}\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Merhaba\" }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/agora/stream",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "agora", "stream"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('delta.content akisi', () => pm.expect(pm.response.text()).to.include('\"delta\":{\"content\"'));",
+              "pm.test('[DONE] ile biter', () => pm.expect(pm.response.text()).to.include('[DONE]'));"
+            ]
           }
         }
       ]

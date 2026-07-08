@@ -302,3 +302,182 @@ export function logApiUsage(entry: {
         })
         .catch(() => {});
 }
+
+// ============================================================
+// AGORA — OpenAI-compatible surface (/api/agora/*)
+//
+// Same auth (API key) and DB-driven permission model as the v1 endpoint, but
+// shaped like OpenAI's Chat Completions API so existing OpenAI clients/SDKs
+// work by just changing the base URL. The target assistant is chosen via the
+// request body's `model` field (its id or slug) rather than the URL.
+// ============================================================
+
+/** A fresh OpenAI-style completion id, e.g. `chatcmpl-ab12…`. */
+export function newCompletionId(): string {
+    return `chatcmpl-${randomBytes(16).toString("hex")}`;
+}
+
+/** Successful preflight for an AGORA request; everything the handler needs. */
+export type OpenAiPrep = {
+    ok: true;
+    apiKeyId: string;
+    ip: string | null;
+    agent: ResolvedAgent;
+    messages: AgentMessage[];
+    model: string;
+    stream: boolean;
+};
+
+/**
+ * Shared preflight for the AGORA endpoints: auth → parse body → resolve the
+ * agent from `model` → permission check → normalize messages. Any rejection
+ * that can be attributed to a valid key is metered (like the v1 path). On
+ * success, returns everything the two handlers need; on failure, a status +
+ * error for the caller to serialize as JSON.
+ */
+export async function prepareOpenAiRequest(
+    request: Request,
+): Promise<OpenAiPrep | { ok: false; status: number; error: string }> {
+    const rawKey = extractApiKey(request.headers);
+    if (!rawKey) return { ok: false, status: 401, error: "Missing API key" };
+
+    const ip = extractClientIp(request.headers);
+
+    let body: unknown;
+    try {
+        body = await request.json();
+    } catch {
+        return { ok: false, status: 400, error: "Invalid JSON body" };
+    }
+
+    const b = body as { model?: unknown; stream?: unknown };
+    const model = typeof b.model === "string" ? b.model.trim() : "";
+    if (!model) {
+        return {
+            ok: false,
+            status: 400,
+            error: "Missing 'model' — set it to the agent id or slug",
+        };
+    }
+
+    // Independent lookups in parallel; key errors take precedence over agent
+    // errors and aren't metered (no key to attribute the call to).
+    const [keyResult, agentResult] = await Promise.all([
+        verifyApiKey(rawKey),
+        resolveAgent(model),
+    ]);
+    if (!keyResult.ok) return { ok: false, status: keyResult.status, error: keyResult.error };
+    const apiKeyId = keyResult.apiKeyId;
+
+    if (!agentResult.ok) {
+        logApiUsage({ apiKeyId, ip, status: agentResult.status });
+        return { ok: false, status: agentResult.status, error: agentResult.error };
+    }
+    const agent = agentResult.agent;
+
+    if (!keyResult.allowed.has(agent.assistantId)) {
+        logApiUsage({ apiKeyId, assistantId: agent.assistantId, ip, status: 403 });
+        return { ok: false, status: 403, error: "API key is not permitted to access this agent" };
+    }
+
+    const messages = toAgentMessages(body);
+    if (messages.length === 0) {
+        logApiUsage({ apiKeyId, assistantId: agent.assistantId, ip, status: 400 });
+        return { ok: false, status: 400, error: "No messages provided" };
+    }
+
+    return { ok: true, apiKeyId, ip, agent, messages, model, stream: b.stream === true };
+}
+
+/**
+ * Non-streaming path: drain the model's text stream into a single string,
+ * capturing the token usage reported when the stream completes.
+ */
+export async function collectAgentResponse(
+    agent: ResolvedAgent,
+    messages: AgentMessage[],
+): Promise<{ text: string; usage: TokenUsage }> {
+    let usage: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+    const stream = await streamAgentResponse(agent, messages, (u) => {
+        usage = u;
+    });
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return { text, usage };
+}
+
+/**
+ * Wrap a raw UTF-8 text stream as OpenAI `chat.completion.chunk` SSE events:
+ * an initial `{role:"assistant"}` delta, one `{content:"…"}` delta per source
+ * chunk, a final `finish_reason:"stop"` delta, then `data: [DONE]`. `onFlush`
+ * fires after the last event (used to meter usage without blocking the stream).
+ */
+export function openAiSseTransform(opts: {
+    id: string;
+    created: number;
+    model: string;
+    onFlush?: () => void;
+}): TransformStream<Uint8Array, Uint8Array> {
+    const decoder = new TextDecoder();
+    const chunk = (delta: object, finish: string | null) =>
+        encoder.encode(
+            `data: ${JSON.stringify({
+                id: opts.id,
+                object: "chat.completion.chunk",
+                created: opts.created,
+                model: opts.model,
+                choices: [{ index: 0, delta, finish_reason: finish }],
+            })}\n\n`,
+        );
+
+    return new TransformStream<Uint8Array, Uint8Array>({
+        start(controller) {
+            controller.enqueue(chunk({ role: "assistant" }, null));
+        },
+        transform(bytes, controller) {
+            const text = decoder.decode(bytes, { stream: true });
+            if (text) controller.enqueue(chunk({ content: text }, null));
+        },
+        flush(controller) {
+            controller.enqueue(chunk({}, "stop"));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            opts.onFlush?.();
+        },
+    });
+}
+
+/**
+ * Wrap a raw UTF-8 text stream as the minimal Agora.io SSE shape: one
+ * `data: {"choices":[{"delta":{"content":"…"}}]}` line per source chunk, ending
+ * with `data: [DONE]`. Unlike `openAiSseTransform`, there is no id/object/model
+ * envelope and no role/finish markers — just the delta content, which is what
+ * the Agora.io consumer expects. `onFlush` fires after `[DONE]` (usage metering).
+ */
+export function agoraSseTransform(opts?: {
+    onFlush?: () => void;
+}): TransformStream<Uint8Array, Uint8Array> {
+    const decoder = new TextDecoder();
+    return new TransformStream<Uint8Array, Uint8Array>({
+        transform(bytes, controller) {
+            const text = decoder.decode(bytes, { stream: true });
+            if (text) {
+                controller.enqueue(
+                    encoder.encode(
+                        `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`,
+                    ),
+                );
+            }
+        },
+        flush(controller) {
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            opts?.onFlush?.();
+        },
+    });
+}

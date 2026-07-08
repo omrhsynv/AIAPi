@@ -38,6 +38,12 @@ Koleksiyon şu istekleri içerir:
 2. **Chat — geçmiş ile** → `{ "messages": [...] }` gönderir; `200` bekler.
 3. **Hata — anahtar eksik (401)** → bilerek anahtarsız gönderir; `401` bekler.
 4. **Hata — bilinmeyen asistan (404)** → olmayan bir asistanı çağırır; `404` bekler.
+5. **AGORA — chat/completions (JSON)** → OpenAI biçiminde, akışsız; `chat.completion` nesnesi bekler.
+6. **AGORA — chat/completions (stream)** → `"stream": true`; SSE `data:` + `[DONE]` bekler.
+7. **AGORA — stream (her zaman SSE)** → `/api/agora/stream`; `chat.completion.chunk` akışı bekler.
+
+> AGORA istekleri asistanı gövdedeki `model` alanıyla (`{{agent}}`) seçer —
+> ayrıntı için [AGORA — OpenAI Uyumlu](./06-agora-openai-uyumlu.md).
 
 Her isteğin **Tests** sekmesinde, dönen durum kodunu doğrulayan küçük bir test
 betiği vardır (örn. `pm.test('200 OK', ...)`). Koleksiyon düzeyinde bir

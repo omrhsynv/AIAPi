@@ -166,6 +166,136 @@ while (true) {
 }`}</Code>
                 </Section>
 
+                <Section title="AGORA — OpenAI Uyumlu Endpoint'ler">
+                    <p className="text-sm">
+                        AGORA, aynı anahtar ve izin modelini kullanan ama{" "}
+                        <strong className="text-slate-200">OpenAI Chat Completions</strong>{" "}
+                        biçiminde konuşan iki endpoint sunar. Mevcut bir OpenAI
+                        istemcisini yalnızca base URL'i değiştirerek kullanabilirsiniz.
+                        Hedef asistan, gövdedeki{" "}
+                        <code className="rounded bg-white/10 px-1">model</code> alanıyla
+                        (id veya slug) seçilir.
+                    </p>
+                    <div className="overflow-hidden rounded-lg border border-white/10">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-white/5 text-slate-200">
+                                <tr>
+                                    <th className="px-4 py-2 font-semibold">Endpoint</th>
+                                    <th className="px-4 py-2 font-semibold">Davranış</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr className="border-t border-white/10">
+                                    <td className="px-4 py-2 font-mono text-[#8d36ff]">
+                                        POST /api/agora/chat/completions
+                                    </td>
+                                    <td className="px-4 py-2 text-slate-400">
+                                        Varsayılan: tek parça JSON (
+                                        <code className="rounded bg-white/10 px-1">chat.completion</code>).{" "}
+                                        <code className="rounded bg-white/10 px-1">stream: true</code>{" "}
+                                        verilirse SSE akışı.
+                                    </td>
+                                </tr>
+                                <tr className="border-t border-white/10">
+                                    <td className="px-4 py-2 font-mono text-[#8d36ff]">
+                                        POST /api/agora/stream
+                                    </td>
+                                    <td className="px-4 py-2 text-slate-400">
+                                        Her zaman SSE akışı — <strong className="text-slate-200">Agora.io</strong>{" "}
+                                        için sadeleştirilmiş biçim (yalnızca{" "}
+                                        <code className="rounded bg-white/10 px-1">delta.content</code>);{" "}
+                                        <code className="rounded bg-white/10 px-1">stream</code> bayrağı yok sayılır.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p className="text-sm text-slate-400">
+                        <strong className="text-slate-200">İstek gövdesi:</strong> OpenAI
+                        biçimi. <code className="rounded bg-white/10 px-1">model</code> =
+                        asistan id/slug, <code className="rounded bg-white/10 px-1">messages</code>{" "}
+                        = konuşma. Gövdedeki <code className="rounded bg-white/10 px-1">system</code>{" "}
+                        mesajları yok sayılır — asistanın kendi sistem talimatı kullanılır.
+                    </p>
+                    <Code>{`{
+  "model": "ustun-zeka",
+  "messages": [
+    { "role": "user", "content": "Merhaba" }
+  ],
+  "stream": true
+}`}</Code>
+                    <p className="text-sm text-slate-400">
+                        <strong className="text-slate-200">Akış (SSE) — /chat/completions</strong>{" "}
+                        (<code className="rounded bg-white/10 px-1">stream: true</code>): tam OpenAI{" "}
+                        <code className="rounded bg-white/10 px-1">chat.completion.chunk</code>{" "}
+                        biçimi. Her parça bir <code className="rounded bg-white/10 px-1">data:</code>{" "}
+                        satırı; akış <code className="rounded bg-white/10 px-1">data: [DONE]</code>{" "}
+                        ile biter:
+                    </p>
+                    <Code>{`data: {"id":"chatcmpl-…","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-…","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Merhaba, "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-…","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"nasıl yardımcı olabilirim?"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-…","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]`}</Code>
+                    <p className="text-sm text-slate-400">
+                        <strong className="text-slate-200">Akış (SSE) — /stream</strong>{" "}
+                        (Agora.io): aynı akış, ama sadeleştirilmiş — yalnızca{" "}
+                        <code className="rounded bg-white/10 px-1">delta.content</code>, zarf yok:
+                    </p>
+                    <Code>{`data: {"choices":[{"delta":{"content":"Merhaba, "}}]}
+
+data: {"choices":[{"delta":{"content":"nasıl "}}]}
+
+data: {"choices":[{"delta":{"content":"yardımcı olabilirim?"}}]}
+
+data: [DONE]`}</Code>
+                    <p className="text-sm text-slate-400">
+                        <strong className="text-slate-200">Akışsız (JSON) yanıtı</strong> —{" "}
+                        <code className="rounded bg-white/10 px-1">stream</code> verilmezse:
+                    </p>
+                    <Code>{`{
+  "id": "chatcmpl-…",
+  "object": "chat.completion",
+  "created": 1720000000,
+  "model": "ustun-zeka",
+  "choices": [
+    {
+      "index": 0,
+      "message": { "role": "assistant", "content": "Merhaba! …" },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": { "prompt_tokens": 12, "completion_tokens": 34, "total_tokens": 46 }
+}`}</Code>
+                    <p className="text-sm text-slate-400">
+                        <strong className="text-slate-200">OpenAI SDK ile:</strong>
+                    </p>
+                    <Code>{`import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: "sk_agent_xxxxxxxx",           // Agent API anahtarınız
+  baseURL: "${base}/api/agora",           // AGORA taban adresi
+});
+
+const stream = await client.chat.completions.create({
+  model: "ustun-zeka",                    // asistan id veya slug
+  messages: [{ role: "user", content: "Merhaba" }],
+  stream: true,
+});
+
+for await (const part of stream) {
+  process.stdout.write(part.choices[0]?.delta?.content ?? "");
+}`}</Code>
+                    <p className="text-xs text-slate-500">
+                        AGORA da v1 ile aynı durum kodlarını döndürür (401/403/404/400/500).
+                        Anahtar yoksa/geçersizse veya asistana izniniz yoksa istek reddedilir.
+                    </p>
+                </Section>
+
                 <Section title="Anahtar Oluşturma">
                     <p className="text-sm">
                         Yönetim panelinden{" "}

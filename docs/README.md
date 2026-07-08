@@ -14,13 +14,19 @@ için gerekli her şey. Bu klasör adım adım Türkçe rehberler içerir.
 4. [Postman](./04-postman.md) — hazır koleksiyonu içe aktarıp test etme.
 5. [Kullanım Analitiği](./05-kullanim-analitigi.md) — token/erişim ölçümü,
    IP takibi, anahtar detay sayfasındaki grafikler, pasifize etme.
+6. [AGORA — OpenAI Uyumlu](./06-agora-openai-uyumlu.md) — OpenAI Chat
+   Completions biçiminde endpoint'ler, SSE akış formatı, OpenAI SDK ile kullanım.
 
 ## Bir bakışta
 
-- **Endpoint:** `POST /api/v1/agents/:agent` (`:agent` = asistanın id'si veya slug'ı)
+- **Endpoint (yerel):** `POST /api/v1/agents/:agent` (`:agent` = asistanın id'si veya slug'ı)
+- **Endpoint (OpenAI uyumlu):** `POST /api/agora/chat/completions` ve
+  `POST /api/agora/stream` (asistan gövdedeki `model` alanıyla seçilir)
 - **Kimlik doğrulama:** `Authorization: Bearer <api_key>` (veya `x-api-key`)
 - **Gövde:** `{ "message": "..." }` veya `{ "messages": [ ... ] }`
-- **Yanıt:** gerçek zamanlı akış (streaming) — `text/plain`
+  (AGORA'da OpenAI biçimi: `{ "model": "...", "messages": [ ... ] }`)
+- **Yanıt:** gerçek zamanlı akış (streaming) — v1'de `text/plain`,
+  AGORA'da OpenAI SSE (`text/event-stream`)
 - **İzin:** Her anahtar yalnızca **izinli olduğu** asistanları çağırabilir
   (veritabanı ilişkisiyle, hardcoded değil).
 

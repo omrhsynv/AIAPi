@@ -42,6 +42,11 @@ export default [
         // :agent is the assistant id or slug.
         route("v1/agents/:agent", "routes/api/v1/agents.tsx"),
 
+        // AGORA — OpenAI-compatible surface. Agent chosen via the body's
+        // `model` field (id or slug); same key auth + DB permissions.
+        route("agora/chat/completions", "routes/api/agora/chat-completions.tsx"),
+        route("agora/stream", "routes/api/agora/stream.tsx"),
+
         // Admin APIs
         route("admin/assistants", "routes/api/admin/assistants.tsx"),
         route("admin/assistants/:assistantId", "routes/api/admin/assistant-detail.tsx"),

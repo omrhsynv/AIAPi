@@ -166,15 +166,19 @@ while (true) {
 }`}</Code>
                 </Section>
 
-                <Section title="AGORA — OpenAI Uyumlu Endpoint'ler">
+                <Section title="AGORA — Agora.io Conversational AI için özel LLM">
                     <p className="text-sm">
-                        AGORA, aynı anahtar ve izin modelini kullanan ama{" "}
+                        Agora.io Conversational AI Engine, "özel LLM" olarak{" "}
                         <strong className="text-slate-200">OpenAI Chat Completions</strong>{" "}
-                        biçiminde konuşan iki endpoint sunar. Mevcut bir OpenAI
-                        istemcisini yalnızca base URL'i değiştirerek kullanabilirsiniz.
-                        Hedef asistan, gövdedeki{" "}
-                        <code className="rounded bg-white/10 px-1">model</code> alanıyla
-                        (id veya slug) seçilir.
+                        protokolünü konuşan bir HTTP servisi bekler: SSE üzerinden{" "}
+                        <code className="rounded bg-white/10 px-1">chat.completion.chunk</code>{" "}
+                        olayları ve sonunda{" "}
+                        <code className="rounded bg-white/10 px-1">data: [DONE]</code>. AGORA
+                        endpoint'leri bu sözleşmeye birebir uyar — bu sayede stok bir OpenAI
+                        istemcisi de yalnızca base URL değiştirilerek çalışır. Hedef asistan,
+                        gövdedeki <code className="rounded bg-white/10 px-1">model</code>{" "}
+                        alanıyla (id veya slug) seçilir; Agora'nın istek başına sunduğu tek
+                        alan budur.
                     </p>
                     <div className="overflow-hidden rounded-lg border border-white/10">
                         <table className="w-full text-left text-sm">
@@ -201,34 +205,60 @@ while (true) {
                                         POST /api/agora/stream
                                     </td>
                                     <td className="px-4 py-2 text-slate-400">
-                                        Her zaman SSE akışı — <strong className="text-slate-200">Agora.io</strong>{" "}
-                                        için sadeleştirilmiş biçim (yalnızca{" "}
-                                        <code className="rounded bg-white/10 px-1">delta.content</code>);{" "}
-                                        <code className="rounded bg-white/10 px-1">stream</code> bayrağı yok sayılır.
+                                        Her zaman SSE akışı; aynı biçim, ama{" "}
+                                        <code className="rounded bg-white/10 px-1">stream</code>{" "}
+                                        bayrağı yok sayılır. Agora'nın{" "}
+                                        <code className="rounded bg-white/10 px-1">stream: true</code>{" "}
+                                        göndereceğine güvenmek istemediğinizde kullanın.
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
                     <p className="text-sm text-slate-400">
+                        <strong className="text-slate-200">Agora agent yapılandırması:</strong>{" "}
+                        agent'ı başlatırken{" "}
+                        <code className="rounded bg-white/10 px-1">llm.url</code> alanına bu
+                        endpoint'i,{" "}
+                        <code className="rounded bg-white/10 px-1">llm.api_key</code> alanına
+                        Agent API anahtarınızı,{" "}
+                        <code className="rounded bg-white/10 px-1">llm.params.model</code>{" "}
+                        alanına da asistan id/slug değerini verin:
+                    </p>
+                    <Code>{`{
+  "llm": {
+    "url": "${base}/api/agora/chat/completions",
+    "api_key": "sk_agent_xxxxxxxx",
+    "params": { "model": "ustun-zeka" }
+  }
+}`}</Code>
+                    <p className="text-sm text-slate-400">
                         <strong className="text-slate-200">İstek gövdesi:</strong> OpenAI
                         biçimi. <code className="rounded bg-white/10 px-1">model</code> =
                         asistan id/slug, <code className="rounded bg-white/10 px-1">messages</code>{" "}
                         = konuşma. Gövdedeki <code className="rounded bg-white/10 px-1">system</code>{" "}
                         mesajları yok sayılır — asistanın kendi sistem talimatı kullanılır.
+                        Agora ayrıca{" "}
+                        <code className="rounded bg-white/10 px-1">appId</code>,{" "}
+                        <code className="rounded bg-white/10 px-1">channel</code> ve{" "}
+                        <code className="rounded bg-white/10 px-1">userId</code> gönderir; bunlar
+                        kabul edilir ama kullanılmaz.
                     </p>
                     <Code>{`{
   "model": "ustun-zeka",
   "messages": [
     { "role": "user", "content": "Merhaba" }
   ],
-  "stream": true
+  "stream": true,
+  "appId": "20b7c51ff4c644ab80cf5a4e646b0537",
+  "channel": "default",
+  "userId": "user123"
 }`}</Code>
                     <p className="text-sm text-slate-400">
-                        <strong className="text-slate-200">Akış (SSE) — /chat/completions</strong>{" "}
-                        (<code className="rounded bg-white/10 px-1">stream: true</code>): tam OpenAI{" "}
-                        <code className="rounded bg-white/10 px-1">chat.completion.chunk</code>{" "}
-                        biçimi. Her parça bir <code className="rounded bg-white/10 px-1">data:</code>{" "}
+                        <strong className="text-slate-200">Akış (SSE) yanıtı</strong> — her iki
+                        endpoint de aynı biçimi döndürür: OpenAI{" "}
+                        <code className="rounded bg-white/10 px-1">chat.completion.chunk</code>.
+                        Her parça bir <code className="rounded bg-white/10 px-1">data:</code>{" "}
                         satırı; akış <code className="rounded bg-white/10 px-1">data: [DONE]</code>{" "}
                         ile biter:
                     </p>
@@ -241,18 +271,20 @@ data: {"id":"chatcmpl-…","object":"chat.completion.chunk","choices":[{"index":
 data: {"id":"chatcmpl-…","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
 
 data: [DONE]`}</Code>
-                    <p className="text-sm text-slate-400">
-                        <strong className="text-slate-200">Akış (SSE) — /stream</strong>{" "}
-                        (Agora.io): aynı akış, ama sadeleştirilmiş — yalnızca{" "}
-                        <code className="rounded bg-white/10 px-1">delta.content</code>, zarf yok:
+                    <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-slate-400">
+                        <strong className="text-amber-300">Dikkat:</strong>{" "}
+                        <code className="rounded bg-white/10 px-1">
+                            {`data: {"choices":[{"delta":{"content":"…"}}]}`}
+                        </code>{" "}
+                        gibi sadeleştirilmiş bir gövde Agora tarafından{" "}
+                        <strong className="text-slate-200">ayrıştırılmaz</strong>. Zarf (
+                        <code className="rounded bg-white/10 px-1">id</code>,{" "}
+                        <code className="rounded bg-white/10 px-1">object</code>,{" "}
+                        <code className="rounded bg-white/10 px-1">created</code>,{" "}
+                        <code className="rounded bg-white/10 px-1">model</code>) ve{" "}
+                        <code className="rounded bg-white/10 px-1">finish_reason</code> alanları
+                        zorunludur.
                     </p>
-                    <Code>{`data: {"choices":[{"delta":{"content":"Merhaba, "}}]}
-
-data: {"choices":[{"delta":{"content":"nasıl "}}]}
-
-data: {"choices":[{"delta":{"content":"yardımcı olabilirim?"}}]}
-
-data: [DONE]`}</Code>
                     <p className="text-sm text-slate-400">
                         <strong className="text-slate-200">Akışsız (JSON) yanıtı</strong> —{" "}
                         <code className="rounded bg-white/10 px-1">stream</code> verilmezse:

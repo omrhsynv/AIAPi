@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "ArisAI — Agent API",
-    "description": "External Agent API for ArisAI. A standalone API key authenticates the caller; the target assistant is chosen by id or slug (the `agent` variable).\n\nTwo surfaces:\n- v1 (`/api/v1/agents/{{agent}}`): plain text streaming.\n- AGORA (`/api/agora/*`): OpenAI-compatible; the agent is set via the body's `model` field. `/chat/completions` returns JSON (or SSE with `stream:true`); `/stream` is always SSE.\n\nSetup:\n1. Set the `apiKey` collection variable (mint one with `npx tsx scripts/create-agent-key.ts`).\n2. Set `agent` to an assistant id or slug.\n3. `baseUrl` defaults to http://localhost:5173.\n\nStreaming responses appear in Postman once the stream ends.",
+    "description": "External Agent API for ArisAI. A standalone API key authenticates the caller; the target assistant is chosen by id or slug (the `agent` variable).\n\nTwo surfaces:\n- v1 (`/api/v1/agents/{{agent}}`): plain text streaming.\n- AGORA (`/api/agora/*`): the custom-LLM endpoint for Agora.io's Conversational AI Engine, which speaks OpenAI's Chat Completions protocol (SSE `chat.completion.chunk` events + `data: [DONE]`). The agent is set via the body's `model` field. `/chat/completions` returns JSON (or SSE with `stream:true`); `/stream` is always SSE. Agora also sends `appId`/`channel`/`userId`, which are accepted but unused.\n\nSetup:\n1. Set the `apiKey` collection variable (mint one with `npx tsx scripts/create-agent-key.ts`).\n2. Set `agent` to an assistant id or slug.\n3. `baseUrl` defaults to http://localhost:5173.\n\nStreaming responses appear in Postman once the stream ends.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -188,13 +188,13 @@
       ]
     },
     {
-      "name": "AGORA — stream (Agora.io sade SSE)",
+      "name": "AGORA — stream (her zaman SSE)",
       "request": {
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"model\": \"{{agent}}\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Merhaba\" }\n  ]\n}"
+          "raw": "{\n  \"model\": \"{{agent}}\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Merhaba\" }\n  ],\n  \"appId\": \"20b7c51ff4c644ab80cf5a4e646b0537\",\n  \"channel\": \"default\",\n  \"userId\": \"user123\"\n}"
         },
         "url": {
           "raw": "{{baseUrl}}/api/agora/stream",
@@ -209,7 +209,9 @@
             "type": "text/javascript",
             "exec": [
               "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('chat.completion.chunk biçimi', () => pm.expect(pm.response.text()).to.include('chat.completion.chunk'));",
               "pm.test('delta.content akisi', () => pm.expect(pm.response.text()).to.include('\"delta\":{\"content\"'));",
+              "pm.test('finish_reason: stop', () => pm.expect(pm.response.text()).to.include('\"finish_reason\":\"stop\"'));",
               "pm.test('[DONE] ile biter', () => pm.expect(pm.response.text()).to.include('[DONE]'));"
             ]
           }

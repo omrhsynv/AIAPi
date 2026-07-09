@@ -304,18 +304,41 @@ export function logApiUsage(entry: {
 }
 
 // ============================================================
-// AGORA — OpenAI-compatible surface (/api/agora/*)
+// AGORA — custom-LLM surface for Agora.io Conversational AI (/api/agora/*)
 //
-// Same auth (API key) and DB-driven permission model as the v1 endpoint, but
-// shaped like OpenAI's Chat Completions API so existing OpenAI clients/SDKs
-// work by just changing the base URL. The target assistant is chosen via the
-// request body's `model` field (its id or slug) rather than the URL.
+// Agora's Conversational AI Engine calls a "custom LLM" over plain HTTP and
+// requires it to speak OpenAI's Chat Completions protocol, streaming back
+// `chat.completion.chunk` events over SSE and terminating with `data: [DONE]`.
+// (See Agora's own reference server, which forwards OpenAI's chunk verbatim:
+// https://github.com/AgoraIO-Community/agora-convo-ai-custom-llm-express)
+//
+// So these endpoints are exactly OpenAI-compatible — which also means any
+// stock OpenAI SDK works against them by changing only the base URL.
+//
+// Auth and the DB-driven permission model are the same as the v1 endpoint.
+// The target assistant is chosen via the request body's `model` field (its id
+// or slug) rather than the URL, because that is the only per-request knob
+// Agora exposes (`llm.params.model` in the agent's start config).
+//
+// Beyond OpenAI's fields, Agora also sends `appId`, `channel` and `userId`.
+// We accept and surface them for diagnostics but don't act on them: this
+// server has no RTM/tool-calling integration, so there is nothing to route.
 // ============================================================
 
 /** A fresh OpenAI-style completion id, e.g. `chatcmpl-ab12…`. */
 export function newCompletionId(): string {
     return `chatcmpl-${randomBytes(16).toString("hex")}`;
 }
+
+/**
+ * The non-OpenAI fields Agora adds to the request body. Present only when the
+ * caller is Agora's Conversational AI Engine; absent for a plain OpenAI SDK.
+ */
+export type AgoraContext = {
+    appId: string | null;
+    channel: string | null;
+    userId: string | null;
+};
 
 /** Successful preflight for an AGORA request; everything the handler needs. */
 export type OpenAiPrep = {
@@ -326,7 +349,13 @@ export type OpenAiPrep = {
     messages: AgentMessage[];
     model: string;
     stream: boolean;
+    agora: AgoraContext;
 };
+
+/** Read an optional string field, normalizing empty/absent/non-string to null. */
+function optionalString(value: unknown): string | null {
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+}
 
 /**
  * Shared preflight for the AGORA endpoints: auth → parse body → resolve the
@@ -350,7 +379,13 @@ export async function prepareOpenAiRequest(
         return { ok: false, status: 400, error: "Invalid JSON body" };
     }
 
-    const b = body as { model?: unknown; stream?: unknown };
+    const b = body as {
+        model?: unknown;
+        stream?: unknown;
+        appId?: unknown;
+        channel?: unknown;
+        userId?: unknown;
+    };
     const model = typeof b.model === "string" ? b.model.trim() : "";
     if (!model) {
         return {
@@ -359,6 +394,12 @@ export async function prepareOpenAiRequest(
             error: "Missing 'model' — set it to the agent id or slug",
         };
     }
+
+    const agora: AgoraContext = {
+        appId: optionalString(b.appId),
+        channel: optionalString(b.channel),
+        userId: optionalString(b.userId),
+    };
 
     // Independent lookups in parallel; key errors take precedence over agent
     // errors and aren't metered (no key to attribute the call to).
@@ -386,7 +427,7 @@ export async function prepareOpenAiRequest(
         return { ok: false, status: 400, error: "No messages provided" };
     }
 
-    return { ok: true, apiKeyId, ip, agent, messages, model, stream: b.stream === true };
+    return { ok: true, apiKeyId, ip, agent, messages, model, stream: b.stream === true, agora };
 }
 
 /**
@@ -453,31 +494,3 @@ export function openAiSseTransform(opts: {
     });
 }
 
-/**
- * Wrap a raw UTF-8 text stream as the minimal Agora.io SSE shape: one
- * `data: {"choices":[{"delta":{"content":"…"}}]}` line per source chunk, ending
- * with `data: [DONE]`. Unlike `openAiSseTransform`, there is no id/object/model
- * envelope and no role/finish markers — just the delta content, which is what
- * the Agora.io consumer expects. `onFlush` fires after `[DONE]` (usage metering).
- */
-export function agoraSseTransform(opts?: {
-    onFlush?: () => void;
-}): TransformStream<Uint8Array, Uint8Array> {
-    const decoder = new TextDecoder();
-    return new TransformStream<Uint8Array, Uint8Array>({
-        transform(bytes, controller) {
-            const text = decoder.decode(bytes, { stream: true });
-            if (text) {
-                controller.enqueue(
-                    encoder.encode(
-                        `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`,
-                    ),
-                );
-            }
-        },
-        flush(controller) {
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-            opts?.onFlush?.();
-        },
-    });
-}

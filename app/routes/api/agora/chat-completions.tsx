@@ -11,16 +11,20 @@ import type { TokenUsage } from "~/lib/openai.server";
 /**
  * AGORA — POST /api/agora/chat/completions
  *
- * OpenAI-compatible Chat Completions endpoint. Point an OpenAI client at this
- * URL, set `model` to an assistant's id or slug, and it just works.
+ * The custom-LLM endpoint for Agora.io's Conversational AI Engine: set the
+ * agent's `llm.url` to this URL, `llm.api_key` to an Agent API key, and
+ * `llm.params.model` to an assistant's id or slug. Because Agora's contract is
+ * literally OpenAI's, a stock OpenAI client works here too.
  *
  * Auth:   `Authorization: Bearer <key>` (or `x-api-key: <key>`).
  * Body:   `{ "model": "<agent>", "messages": [{ "role": "user", "content": "…" }], "stream"?: bool }`
+ *         Agora additionally sends `appId`, `channel`, `userId` — accepted, unused.
  * Reply:  `stream:false` (default) → a `chat.completion` JSON object.
  *         `stream:true`            → `chat.completion.chunk` SSE events + `[DONE]`.
  *
  * The assistant's own system instruction is always used; any `system` message
- * in the body is ignored (only `user`/`assistant` turns are forwarded).
+ * in the body is ignored (only `user`/`assistant` turns are forwarded). That
+ * covers Agora's `llm.system_messages`, which arrive as `system` turns.
  */
 
 const SSE_HEADERS = {
@@ -47,7 +51,7 @@ export async function action({ request }: { request: Request }) {
     if (!prep.ok) {
         return jsonError(prep.error, prep.status);
     }
-    const { apiKeyId, ip, agent, messages, model, stream } = prep;
+    const { apiKeyId, ip, agent, messages, model, stream, agora } = prep;
     const id = newCompletionId();
     const created = Math.floor(Date.now() / 1000);
 
@@ -75,7 +79,7 @@ export async function action({ request }: { request: Request }) {
             return new Response(sse, { headers: SSE_HEADERS });
         } catch (error) {
             logApiUsage({ apiKeyId, assistantId: agent.assistantId, ip, status: 500 });
-            console.error("AGORA stream error:", error);
+            console.error("AGORA stream error:", { channel: agora.channel, error });
             return jsonError("Internal server error", 500);
         }
     }
@@ -109,7 +113,7 @@ export async function action({ request }: { request: Request }) {
         });
     } catch (error) {
         logApiUsage({ apiKeyId, assistantId: agent.assistantId, ip, status: 500 });
-        console.error("AGORA error:", error);
+        console.error("AGORA error:", { channel: agora.channel, error });
         return jsonError("Internal server error", 500);
     }
 }

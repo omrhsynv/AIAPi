@@ -1,27 +1,23 @@
 import {
-    agoraSseTransform,
     logApiUsage,
+    newCompletionId,
+    openAiSseTransform,
     prepareOpenAiRequest,
     streamAgentResponse,
 } from "~/lib/agent-api.server";
 import type { TokenUsage } from "~/lib/openai.server";
 
 /**
- * AGORA — POST /api/agora/stream  (Agora.io)
+ * AGORA — POST /api/agora/stream
  *
- * Dedicated streaming endpoint that emits the minimal Agora.io SSE shape:
- * one delta-content line per chunk, ending with `data: [DONE]`.
+ * Same contract as /api/agora/chat/completions, except the response is *always*
+ * an SSE stream: the request body's `stream` flag is ignored. Point Agora's
+ * `llm.url` here when you want to guarantee streaming without depending on the
+ * engine setting `stream: true` itself.
  *
- *   data: {"choices":[{"delta":{"content":"Merhaba, "}}]}
- *   data: {"choices":[{"delta":{"content":"nasıl "}}]}
- *   data: {"choices":[{"delta":{"content":"yardımcı olabilirim?"}}]}
- *   data: [DONE]
- *
- * (For the full OpenAI `chat.completion.chunk` envelope, use
- * /api/agora/chat/completions with `stream: true`.)
- *
- * Auth and permissions are identical to /api/agora/chat/completions; the target
- * assistant is chosen via the body's `model` field (id or slug).
+ * The wire format is OpenAI's `chat.completion.chunk`, which is what Agora's
+ * Conversational AI Engine parses — an `id`/`object`/`created`/`model` envelope
+ * around `choices[0].delta`, closed by `finish_reason:"stop"` and `data: [DONE]`.
  */
 
 const SSE_HEADERS = {
@@ -48,7 +44,7 @@ export async function action({ request }: { request: Request }) {
     if (!prep.ok) {
         return jsonError(prep.error, prep.status);
     }
-    const { apiKeyId, ip, agent, messages } = prep;
+    const { apiKeyId, ip, agent, messages, model, agora } = prep;
 
     try {
         let usage: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
@@ -56,7 +52,10 @@ export async function action({ request }: { request: Request }) {
             usage = u;
         });
         const sse = raw.pipeThrough(
-            agoraSseTransform({
+            openAiSseTransform({
+                id: newCompletionId(),
+                created: Math.floor(Date.now() / 1000),
+                model,
                 onFlush: () =>
                     logApiUsage({
                         apiKeyId,
@@ -70,7 +69,7 @@ export async function action({ request }: { request: Request }) {
         return new Response(sse, { headers: SSE_HEADERS });
     } catch (error) {
         logApiUsage({ apiKeyId, assistantId: agent.assistantId, ip, status: 500 });
-        console.error("AGORA stream error:", error);
+        console.error("AGORA stream error:", { channel: agora.channel, error });
         return jsonError("Internal server error", 500);
     }
 }

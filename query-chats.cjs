@@ -1,0 +1,1 @@
+const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient(); prisma.chat.findMany({ include: { messages: true } }).then(chats => console.dir(chats, { depth: null })).catch(console.error).finally(() => prisma.$disconnect());

@@ -7,9 +7,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+	provider = "postgresql"
+	url = env("DATABASE_URL")
 }
+
+
 
 // ============================================
 // BetterAuth Models
@@ -77,6 +79,7 @@ model Verification {
 model Assistant {
   id                String   @id @default(cuid())
   name              String
+  slug              String?  @unique // optional human-friendly id for the Agent API
   description       String?
   systemInstruction String   @db.Text
   vectorStoreId     String?
@@ -92,8 +95,46 @@ model Assistant {
   chats             Chat[]
   userAccess        UserAssistantAccess[]
   vectorStoreFiles  VectorStoreFile[]
+  apiKeys           ApiKey[] // API keys permitted to invoke this assistant
 
   @@index([isActive])
+}
+
+// ============================================
+// Agent API (external, programmatic access)
+// ============================================
+
+// API key for the Agent API. The target assistant is chosen per-request by id
+// or slug; the key may only invoke assistants it is explicitly linked to
+// (the `assistants` relation below). The raw key is shown once at creation;
+// only its sha256 hash is stored.
+model ApiKey {
+  id         String      @id @default(cuid())
+  name       String?     // human label, e.g. "prod-integration"
+  keyHash    String      @unique // sha256(rawKey), the lookup column
+  keyPrefix  String      // first chars of the raw key, for display only
+  revoked    Boolean     @default(false)
+  lastUsedAt DateTime?
+  createdAt  DateTime    @default(now())
+  assistants Assistant[] // which assistants this key is permitted to invoke
+  usage      ApiKeyUsage[]
+}
+
+// One row per Agent API request made with a valid key. Powers the per-key
+// usage analytics (token/access metering, source IPs, call counts).
+model ApiKeyUsage {
+  id           String   @id @default(cuid())
+  apiKeyId     String
+  apiKey       ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  assistantId  String?  // which assistant was targeted (plain id; survives assistant deletion)
+  ip           String?  // source IP (from X-Forwarded-For / X-Real-IP)
+  status       Int      // HTTP status returned (200/400/403/404/500)
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  totalTokens  Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([apiKeyId, createdAt])
 }
 
 // User-Assistant Access Control

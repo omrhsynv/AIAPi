@@ -1,0 +1,1 @@
+const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient({ datasources: { db: { url: 'postgresql://postgres:12345@localhost:5432/friendlyai' } } }); prisma.assistant.findMany().then(console.log).catch(console.error).finally(() => prisma.$disconnect());

@@ -18,12 +18,22 @@ type ResponseInput = {
     content: string;
 }[];
 
+// Token usage reported by the Responses API when a stream completes.
+export type TokenUsage = {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+};
+
 // Chat with streaming using Responses API - returns a ReadableStream
+// `onUsage` (optional) is invoked once with token counts when the stream
+// completes. Existing callers that omit it are unaffected.
 export async function chatStream(
     messages: Array<{ role: "user" | "assistant"; content: string }>,
     systemInstruction: string,
     vectorStoreId?: string,
-    model: string = "gpt-4.1-mini"
+    model: string = "gpt-4.1-mini",
+    onUsage?: (usage: TokenUsage) => void
 ): Promise<ReadableStream<Uint8Array>> {
     const openai = getOpenAI();
 
@@ -74,6 +84,15 @@ export async function chatStream(
                         controller.enqueue(encoder.encode(eventData.delta));
                     } else if (eventData.type === "content_block_delta" && eventData.delta?.text) {
                         controller.enqueue(encoder.encode(eventData.delta.text));
+                    } else if (onUsage && eventData.type === "response.completed") {
+                        const u = eventData.response?.usage;
+                        if (u) {
+                            onUsage({
+                                inputTokens: u.input_tokens ?? 0,
+                                outputTokens: u.output_tokens ?? 0,
+                                totalTokens: u.total_tokens ?? 0,
+                            });
+                        }
                     }
                 }
                 controller.close();

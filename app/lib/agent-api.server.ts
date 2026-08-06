@@ -228,6 +228,10 @@ export async function streamAgentResponse(
     agent: ResolvedAgent,
     messages: AgentMessage[],
     onUsage?: (usage: TokenUsage) => void,
+    // Optional reply-length ceiling. The Agora endpoints pass a small value so
+    // spoken answers stay short (avoids Agora History truncation); v1/other
+    // callers omit it and remain uncapped.
+    maxOutputTokens?: number,
 ): Promise<ReadableStream<Uint8Array>> {
     if (!process.env.OPENAI_API_KEY) {
         return mockStream(agent, messages, onUsage);
@@ -238,6 +242,7 @@ export async function streamAgentResponse(
         agent.vectorStoreId ?? undefined,
         agent.model,
         onUsage,
+        maxOutputTokens,
     );
 }
 
@@ -350,6 +355,8 @@ export type OpenAiPrep = {
     model: string;
     stream: boolean;
     agora: AgoraContext;
+    /** Player language forwarded by Agora via `llm.params.locale` (may be null). */
+    locale: string | null;
 };
 
 /** Read an optional string field, normalizing empty/absent/non-string to null. */
@@ -385,6 +392,7 @@ export async function prepareOpenAiRequest(
         appId?: unknown;
         channel?: unknown;
         userId?: unknown;
+        locale?: unknown;
     };
     const agora: AgoraContext = {
         appId: optionalString(b.appId),
@@ -397,6 +405,13 @@ export async function prepareOpenAiRequest(
     const apiKeyId = keyResult.apiKeyId;
 
     let model = typeof b.model === "string" ? b.model.trim() : "";
+    // Agora does not always echo the model back. Fall back to the configured
+    // default before guessing from the key's permissions — picking "whichever
+    // assistant happens to be first" silently routed NPC traffic to the wrong
+    // (non-RAG) assistant.
+    if (!model) {
+        model = (process.env.AGENT_LLM_MODEL || "").trim();
+    }
     if (!model && keyResult.allowed.size > 0) {
         model = Array.from(keyResult.allowed)[0];
     }
@@ -429,7 +444,17 @@ export async function prepareOpenAiRequest(
         messages.push({ role: "user", content: "[No speech detected]" });
     }
 
-    return { ok: true, apiKeyId, ip, agent, messages, model, stream: b.stream === true, agora };
+    return {
+        ok: true,
+        apiKeyId,
+        ip,
+        agent,
+        messages,
+        model,
+        stream: b.stream === true,
+        agora,
+        locale: optionalString(b.locale),
+    };
 }
 
 /**
@@ -439,11 +464,12 @@ export async function prepareOpenAiRequest(
 export async function collectAgentResponse(
     agent: ResolvedAgent,
     messages: AgentMessage[],
+    maxOutputTokens?: number,
 ): Promise<{ text: string; usage: TokenUsage }> {
     let usage: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
     const stream = await streamAgentResponse(agent, messages, (u) => {
         usage = u;
-    });
+    }, maxOutputTokens);
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let text = "";

@@ -33,7 +33,11 @@ export async function chatStream(
     systemInstruction: string,
     vectorStoreId?: string,
     model: string = "gpt-4.1-mini",
-    onUsage?: (usage: TokenUsage) => void
+    onUsage?: (usage: TokenUsage) => void,
+    // Optional hard ceiling on reply length. Left undefined by the web UI (no
+    // cap); the Agora path passes a small value so replies stay short enough
+    // that Agora's History API never truncates them. See agent-api.server.ts.
+    maxOutputTokens?: number
 ): Promise<ReadableStream<Uint8Array>> {
     const openai = getOpenAI();
 
@@ -68,6 +72,10 @@ export async function chatStream(
 
     if (tools.length > 0) {
         requestParams.tools = tools as any;
+    }
+
+    if (maxOutputTokens && maxOutputTokens > 0) {
+        (requestParams as any).max_output_tokens = maxOutputTokens;
     }
 
     const response = await openai.responses.create(requestParams);

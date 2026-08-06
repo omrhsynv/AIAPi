@@ -90,6 +90,21 @@ type Pages = {
   "/api/agora/stream": {
     params: {};
   };
+  "/api/realtime/session": {
+    params: {};
+  };
+  "/api/realtime/agent": {
+    params: {};
+  };
+  "/api/realtime/tts": {
+    params: {};
+  };
+  "/api/realtime/history": {
+    params: {};
+  };
+  "/api/realtime/stats": {
+    params: {};
+  };
   "/api/admin/assistants": {
     params: {};
   };
@@ -129,7 +144,7 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/login" | "/register" | "/docs/agent-api" | "/chat" | "/chat/:chatId" | "/admin" | "/admin/dashboard" | "/admin/assistants" | "/admin/assistants/:assistantId" | "/admin/users" | "/admin/api-keys" | "/admin/api-keys/:keyId" | "/admin/settings" | "/api/logout" | "/api/chat/:chatId" | "/api/transcribe" | "/api/tts" | "/api/assistants" | "/api/user/chats" | "/api/v1/agents/:agent" | "/api/agora/chat/completions" | "/api/agora/stream" | "/api/admin/assistants" | "/api/admin/assistants/:assistantId" | "/api/admin/assistants/:assistantId/files" | "/api/admin/users" | "/api/admin/users/:userId/access" | "/api/admin/api-keys" | "/api/admin/api-keys/:keyId" | "/api/auth/*";
+    page: "/" | "/login" | "/register" | "/docs/agent-api" | "/chat" | "/chat/:chatId" | "/admin" | "/admin/dashboard" | "/admin/assistants" | "/admin/assistants/:assistantId" | "/admin/users" | "/admin/api-keys" | "/admin/api-keys/:keyId" | "/admin/settings" | "/api/logout" | "/api/chat/:chatId" | "/api/transcribe" | "/api/tts" | "/api/assistants" | "/api/user/chats" | "/api/v1/agents/:agent" | "/api/agora/chat/completions" | "/api/agora/stream" | "/api/realtime/session" | "/api/realtime/agent" | "/api/realtime/tts" | "/api/realtime/history" | "/api/realtime/stats" | "/api/admin/assistants" | "/api/admin/assistants/:assistantId" | "/api/admin/assistants/:assistantId/files" | "/api/admin/users" | "/api/admin/users/:userId/access" | "/api/admin/api-keys" | "/api/admin/api-keys/:keyId" | "/api/auth/*";
   };
   "routes/home.tsx": {
     id: "routes/home";
@@ -230,6 +245,26 @@ type RouteFiles = {
     id: "routes/api/agora/stream";
     page: "/api/agora/stream";
   };
+  "routes/api/realtime/session.tsx": {
+    id: "routes/api/realtime/session";
+    page: "/api/realtime/session";
+  };
+  "routes/api/realtime/agent.tsx": {
+    id: "routes/api/realtime/agent";
+    page: "/api/realtime/agent";
+  };
+  "routes/api/realtime/tts.tsx": {
+    id: "routes/api/realtime/tts";
+    page: "/api/realtime/tts";
+  };
+  "routes/api/realtime/history.tsx": {
+    id: "routes/api/realtime/history";
+    page: "/api/realtime/history";
+  };
+  "routes/api/realtime/stats.tsx": {
+    id: "routes/api/realtime/stats";
+    page: "/api/realtime/stats";
+  };
   "routes/api/admin/assistants.tsx": {
     id: "routes/api/admin/assistants";
     page: "/api/admin/assistants";
@@ -291,6 +326,11 @@ type RouteModules = {
   "routes/api/v1/agents": typeof import("./app/routes/api/v1/agents.tsx");
   "routes/api/agora/chat-completions": typeof import("./app/routes/api/agora/chat-completions.tsx");
   "routes/api/agora/stream": typeof import("./app/routes/api/agora/stream.tsx");
+  "routes/api/realtime/session": typeof import("./app/routes/api/realtime/session.tsx");
+  "routes/api/realtime/agent": typeof import("./app/routes/api/realtime/agent.tsx");
+  "routes/api/realtime/tts": typeof import("./app/routes/api/realtime/tts.tsx");
+  "routes/api/realtime/history": typeof import("./app/routes/api/realtime/history.tsx");
+  "routes/api/realtime/stats": typeof import("./app/routes/api/realtime/stats.tsx");
   "routes/api/admin/assistants": typeof import("./app/routes/api/admin/assistants.tsx");
   "routes/api/admin/assistant-detail": typeof import("./app/routes/api/admin/assistant-detail.tsx");
   "routes/api/admin/assistant-files": typeof import("./app/routes/api/admin/assistant-files.tsx");

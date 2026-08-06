@@ -48,9 +48,10 @@ export async function action({ request }: { request: Request }) {
 
     try {
         let usage: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+        // Keep spoken replies short so Agora's History API never truncates them.
         const raw = await streamAgentResponse(agent, messages, (u) => {
             usage = u;
-        });
+        }, 220);
         const sse = raw.pipeThrough(
             openAiSseTransform({
                 id: newCompletionId(),

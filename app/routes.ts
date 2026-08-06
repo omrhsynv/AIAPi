@@ -47,6 +47,22 @@ export default [
         route("agora/chat/completions", "routes/api/agora/chat-completions.tsx"),
         route("agora/stream", "routes/api/agora/stream.tsx"),
 
+        // REALTIME — Phase 1 security foundation for the multiplayer NPC.
+        // Mint an ephemeral session (service-key auth), then the client uses the
+        // returned JWT to start/stop the agent and fetch TTS. No provider
+        // secrets ship in the game client.
+        route("realtime/session", "routes/api/realtime/session.tsx"),
+        route("realtime/agent", "routes/api/realtime/agent.tsx"),
+        route("realtime/tts", "routes/api/realtime/tts.tsx"),
+        route("realtime/history", "routes/api/realtime/history.tsx"),
+        route("realtime/stats", "routes/api/realtime/stats.tsx"),
+
+        // Player-to-player live translation: speaker's audio -> transcript,
+        // then each listener translates it into their own language (cached).
+        route("realtime/speech", "routes/api/realtime/speech.tsx"),
+        route("realtime/translate", "routes/api/realtime/translate.tsx"),
+        route("realtime/voices", "routes/api/realtime/voices.tsx"),
+
         // Admin APIs
         route("admin/assistants", "routes/api/admin/assistants.tsx"),
         route("admin/assistants/:assistantId", "routes/api/admin/assistant-detail.tsx"),

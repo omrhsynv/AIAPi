@@ -211,3 +211,111 @@ model AppSettings {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// ============================================
+// Realtime NPC sessions (Phase 2)
+// Server-authoritative session lifecycle for the multiplayer voice NPC.
+// Ported from the Aris888 metaverse platform's realtime_sessions/turns tables.
+// ============================================
+
+model RealtimeSession {
+  id              String    @id @default(cuid())
+  sessionId       String    @unique
+  orgId           String
+  gameId          String
+  characterId     String
+  playerId        String
+  locale          String    @default("en-US")
+  state           String    @default("active") // active | interrupted | closing | closed
+  connectionId    String?
+  ttlSeconds      Int       @default(900)
+  expiresAt       DateTime
+  resumeExpiresAt DateTime?
+  startedAt       DateTime  @default(now())
+  lastSeenAt      DateTime  @default(now())
+  closedAt        DateTime?
+  closeReason     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  turns           RealtimeTurn[]
+
+  @@index([orgId, gameId, playerId, characterId])
+  @@index([state])
+}
+
+model RealtimeTurn {
+  id           String    @id @default(cuid())
+  turnId       String    @unique
+  sessionId    String
+  session      RealtimeSession @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+  inputText    String?   @db.Text
+  outputText   String?   @db.Text
+  state        String    @default("started") // started | completed | failed
+  inputTokens  Int       @default(0)
+  outputTokens Int       @default(0)
+  errorCode    String?
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
+
+  @@index([sessionId])
+}
+
+// Game-specific terminology locks for live translation (Phase 5).
+// e.g. skill/map/faction names that must render identically in every language.
+model RealtimeGlossaryTerm {
+  id         String   @id @default(cuid())
+  orgId      String
+  gameId     String
+  sourceTerm String
+  targetTerm String
+  locale     String   // target locale this lock applies to, or "*" for all
+  createdAt  DateTime @default(now())
+
+  @@unique([orgId, gameId, sourceTerm, locale])
+  @@index([orgId, gameId])
+}
+
+// ============================================
+// Shared response cache (multiplayer cost control)
+// One NPC answered once → every player asking the same/similar question reuses
+// the cached answer + audio + translations instead of hitting GPT/ElevenLabs.
+// ============================================
+
+model RealtimeResponseCache {
+  id           String   @id @default(cuid())
+  orgId        String
+  gameId       String
+  characterId  String   // the assistant/NPC this answer belongs to
+  questionNorm String              // normalized question (exact-match key)
+  question     String   @db.Text   // original question text
+  answer       String   @db.Text   // canonical LLM answer (reused by all players)
+  embedding    String?  @db.Text   // JSON float[] for semantic ("similar") match
+  hitCount     Int      @default(0)
+  createdAt    DateTime @default(now())
+  lastUsedAt   DateTime @default(now())
+
+  @@unique([orgId, gameId, characterId, questionNorm])
+  @@index([orgId, gameId, characterId])
+}
+
+model RealtimeTtsCache {
+  id         String   @id @default(cuid())
+  cacheKey   String   @unique   // sha256(voiceId + "\n" + answerText)
+  voiceId    String
+  audio      Bytes               // cached ElevenLabs mp3
+  hitCount   Int      @default(0)
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+}
+
+model RealtimeTranslationCache {
+  id         String   @id @default(cuid())
+  cacheKey   String   @unique   // sha256(targetLocale + "\n" + sourceText)
+  targetLocale String
+  sourceText String   @db.Text
+  translated String   @db.Text
+  hitCount   Int      @default(0)
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+}
